@@ -25,6 +25,44 @@ const sendJWTToBackend = async (session) => {
   return null;
 }
 
+const handleEmailConfirmation = async (email) => {
+  try {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`
+      }
+    })
+    
+    if (error) {
+      console.error('重新发送确认邮件时出错:', error.message)
+      return
+    }
+    
+    alert('确认邮件已发送，请查收')
+  } catch (error) {
+    console.error('发送确认邮件时出错:', error)
+  }
+}
+
+const handlePasswordReset = async (email) => {
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/update-password`,
+    })
+    
+    if (error) {
+      console.error('发送重置密码邮件时出错:', error.message)
+      return
+    }
+    
+    alert('重置密码邮件已发送，请查收')
+  } catch (error) {
+    console.error('重置密码时出错:', error)
+  }
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
   const [backendResponse, setBackendResponse] = useState(null)
@@ -48,11 +86,77 @@ export default function App() {
       }
     })
 
-    return () => subscription.unsubscribe()
+    // 修复邮箱确认状态监听
+    const {
+      data: { subscription: authSubscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'EMAIL_CONFIRMED') {
+        alert('邮箱已成功验证！')
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+      authSubscription?.unsubscribe()
+    }
   }, [])
 
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      console.error('退出登录时出错:', error)
+    } else {
+      setSession(null)
+      setBackendResponse(null)
+    }
+  }
+
   if (!session) {
-    return (<Auth supabaseClient={supabase} appearance={{ theme: ThemeSupa }} />)
+    return (
+      <Auth
+        supabaseClient={supabase}
+        appearance={{ theme: ThemeSupa }}
+        providers={['github', 'google']}
+        redirectTo={window.location.origin}
+        requireEmailConfirmation={true}
+        localization={{
+          variables: {
+            sign_up: {
+              email_label: '电子邮箱',
+              password_label: '密码',
+              button_label: '注册',
+              loading_button_label: '注册中...',
+              link_text: '没有账号？立即注册',
+            },
+            sign_in: {
+              email_label: '电子邮箱',
+              password_label: '密码',
+              button_label: '登录',
+              loading_button_label: '登录中...',
+              link_text: '已有账号？立即登录',
+            },
+            // 自定义每个提供商的文本
+            providers: {
+              github: '使用 GitHub 账号',
+              google: '使用 Google 账号',
+            },
+            confirmation: {
+              email_confirmed: '邮箱已确认',
+              confirmation_text: '请检查您的邮箱以确认注册',
+              button_label: '重新发送确认邮件',
+              loading_button_label: '发送中...',
+            },
+            forgotten_password: {
+              email_label: '电子邮箱',
+              password_label: '密码',
+              button_label: '发送重置密码邮件',
+              loading_button_label: '发送中...',
+              confirmation_text: '如果您的邮箱地址正确，您将收到重置密码的邮件',
+            }
+          },
+        }}
+      />
+    )
   }
   else {
     return (
@@ -64,6 +168,7 @@ export default function App() {
             <p>{backendResponse.data}</p>
           </div>
         )}
+        <button onClick={handleSignOut}>退出登录</button>
       </div>
     )
   }
